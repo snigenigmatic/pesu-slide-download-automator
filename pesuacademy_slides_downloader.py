@@ -2,6 +2,8 @@ from playwright.sync_api import sync_playwright
 import os
 import re
 
+downloaded_urls = set()
+
 def sanitize(name: str):
     return re.sub(r"[^\w\- ]", "", name).strip()
 
@@ -12,13 +14,14 @@ def login(page, username, password):
     page.fill("input[name='j_password']", password)
     page.click("button.btn.btn-lg.btn-primary.btn-block")
     page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(800)
     print("Logged in successfully.")
 
 # 2. SELECT COURSE
 def select_course(page):
+    page.wait_for_selector("span.menu-name:has-text('My Courses')", timeout=15000)
     page.click("span.menu-name:has-text('My Courses')")
-    page.wait_for_selector("select#semesters")
-    page.wait_for_selector("table.table.table-hover")
+    page.wait_for_selector("table.table.table-hover", timeout=15000)
 
     rows = page.locator("table.table.table-hover tbody tr")
     count = rows.count()
@@ -41,9 +44,9 @@ def select_course(page):
 
     return course_name
 
-# 3. SELECT UNIT FUNCTION
+# 3. SELECT UNIT
 def select_unit(page):
-    page.wait_for_selector("#courselistunit li")
+    page.wait_for_selector("#courselistunit li", timeout=15000)
 
     units = page.locator("#courselistunit li a")
     unit_count = units.count()
@@ -63,20 +66,24 @@ def select_unit(page):
     selected_unit.click()
 
     print(f"Opening {unit_name}...")
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(800)
 
     return unit_name
 
 # 4. CLICK FIRST SLIDE
 def open_first_slide(page):
-    page.wait_for_selector("span.pesu-icon-presentation-graphs")
+    page.wait_for_selector("span.pesu-icon-presentation-graphs", timeout=15000)
     page.locator("a:has(span.pesu-icon-presentation-graphs)").first.click()
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(800)
     print("Clicked first slide entry.")
 
-    
-# 5. DOWNLOAD SLIDE
-def download_slides(page, course_name, unit_name):
-    page.wait_for_timeout(500)
-    page.wait_for_selector(".link-preview a")
+# 5. DOWNLOAD SLIDES
+def download_slides(page, course_name, unit_name, downloaded_urls):
+    page.wait_for_timeout(800)
+    page.wait_for_selector(".link-preview a", timeout=15000)
+
     slide_links = page.locator(".link-preview a")
     slide_count = slide_links.count()
 
@@ -104,6 +111,11 @@ def download_slides(page, course_name, unit_name):
             pdf_url = "https://www.pesuacademy.com" + url
             pdf_url = pdf_url.split("#")[0]
 
+            # Skip duplicates (in-memory only)
+            if pdf_url in downloaded_urls:
+                print(f"Skipping already downloaded: {pdf_url}")
+                continue
+
             print(f"\nDownloading: {pdf_url}")
             response = page.request.get(pdf_url)
 
@@ -118,20 +130,28 @@ def download_slides(page, course_name, unit_name):
                 f.write(response.body())
 
             print(f"Saved → {filepath}")
-            next_number += 1
 
-def navigate_through_pages(page, course_name, unit_name):
+            downloaded_urls.add(pdf_url)
+            next_number += 1
+            page.wait_for_timeout(300)
+
+# 6. PAGE NAVIGATION + SLIDE DOWNLOAD ON EVERY PAGE
+def navigate_through_pages(page, course_name, unit_name, downloaded_urls):
     while True:
-        page.wait_for_selector(".coursecontent-navigation-area a.pull-right")
+        page.wait_for_selector(".coursecontent-navigation-area a.pull-right", timeout=15000)
         next_button = page.locator(".coursecontent-navigation-area a.pull-right")
         label = next_button.inner_text().strip()
 
-        print("Current button:", label)
-        print("Clicking Slides tab…")
+        print("\nCurrent button:", label)
+
+        # Open slides tab
         slides_tab = page.locator("#contentType_2")
         slides_tab.click()
-        download_slides(page, course_name, unit_name)
+        page.wait_for_timeout(600)
 
+        download_slides(page, course_name, unit_name, downloaded_urls)
+
+        # Stop when final page
         if "Back to Units" in label:
             print("Reached 'Back to Units'. Stopping navigation.")
             break
@@ -139,11 +159,12 @@ def navigate_through_pages(page, course_name, unit_name):
         next_button.click()
         print("Clicked next… waiting for next page load")
         page.wait_for_load_state("networkidle")
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(800)
 
     page.wait_for_load_state("networkidle")
-    
+    page.wait_for_timeout(500)
 
+# MAIN
 def main():
     username = input("Enter Username: ")
     password = input("Enter Password: ")
@@ -157,10 +178,10 @@ def main():
         course_name = select_course(page)
         unit_name = select_unit(page)
         open_first_slide(page)
-        download_slides(page, course_name, unit_name)
-        navigate_through_pages(page, course_name, unit_name)
+        download_slides(page, course_name, unit_name, downloaded_urls)
+        navigate_through_pages(page, course_name, unit_name, downloaded_urls)
 
-        page.wait_for_timeout(5000)
+        page.wait_for_timeout(4000)
 
 if __name__ == "__main__":
     main()
