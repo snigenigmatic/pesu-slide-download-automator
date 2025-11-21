@@ -82,6 +82,8 @@ def main():
 
     except TimeoutError:
         print("\nUnstable internet connection. Try again later.")
+    except KeyboardInterrupt:
+        print("\nExiting...")
     except Exception as exc:
         print("\nAn unexpected error occurred: {}".format(exc))
     finally:
