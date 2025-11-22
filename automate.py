@@ -97,10 +97,10 @@ def open_first_slide(page):
 # 5. DOWNLOAD SLIDES
 def download_slides(page, course_name, unit_name, downloaded_urls):
     page.wait_for_timeout(800)
-    page.wait_for_selector(".link-preview a", timeout=15000)
+    page.wait_for_selector(".link-preview", timeout=15000)
 
-    slide_links = page.locator(".link-preview a")
-    slide_count = slide_links.count()
+    slide_items = page.locator(".link-preview")
+    slide_count = slide_items.count()
     print(f"\nFound {slide_count} files.")
 
     folder = f"{course_name} {unit_name}"
@@ -113,36 +113,53 @@ def download_slides(page, course_name, unit_name, downloaded_urls):
     next_number = max(existing) + 1 if existing else 101
 
     for i in range(slide_count):
-        link = slide_links.nth(i)
-        onclick = link.get_attribute("onclick")
-        matches = re.findall(r"loadIframe\('([^']+)", onclick)
+        item = slide_items.nth(i)
 
-        if not matches:
+        # Case 1: <a onclick="loadIframe(...)">
+        link = item.locator("a")
+        onclick = link.get_attribute("onclick") if link.count() else None
+        urls = []
+        is_case2 = False
+
+        if onclick:
+            urls = re.findall(r"loadIframe\('([^']+)", onclick)
+
+        # Case 2: <div onclick="downloadcoursedoc(...)">
+        if not urls:
+            onclick_div = item.get_attribute("onclick")
+            if onclick_div:
+                matches = re.findall(r"downloadcoursedoc\('([^']+)'", onclick_div)
+                if matches:
+                    urls = [f"/Academy/a/referenceMeterials/downloadslidecoursedoc/{m}" for m in matches]
+                    is_case2 = True  # force as case 2
+
+        if not urls:
             print("Could not extract URL.")
             continue
 
-        for url in matches:
-            pdf_url = "https://www.pesuacademy.com" + url
-            pdf_url = pdf_url.split("#")[0]
+        for url in urls:
+            file_url = "https://www.pesuacademy.com" + url
+            file_url = file_url.split("#")[0]
 
-            if pdf_url in downloaded_urls:
-                print(f"Skipping already downloaded: {pdf_url}")
+            if file_url in downloaded_urls:
+                print(f"Skipping already downloaded: {file_url}")
                 continue
 
-            print(f"\nDownloading: {pdf_url}")
-            response = page.request.get(pdf_url)
+            print(f"\nDownloading: {file_url}")
+            response = page.request.get(file_url)
             if response.status != 200:
                 print(f"Failed ({response.status})")
                 continue
 
-            filename = f"{next_number}.pdf"
+            # Force .pptx for case 2, .pdf otherwise
+            ext = ".pptx" if is_case2 else ".pdf"
+            filename = f"{next_number}{ext}"
             filepath = os.path.join(folder, filename)
-
             with open(filepath, "wb") as f:
                 f.write(response.body())
 
             print(f"Saved → {filepath}")
-            downloaded_urls.add(pdf_url)
+            downloaded_urls.add(file_url)
             next_number += 1
             page.wait_for_timeout(300)
 

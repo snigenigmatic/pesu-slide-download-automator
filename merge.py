@@ -56,9 +56,20 @@ def merge(folder, output_name=None):
 
 
 # 7. MERGE PDFs
-def ask_and_merge_pdfs(folder):
+def ask_and_merge_pdfs(folder, output = None):
     values = dotenv_values(ENV_FILE) if os.path.exists(ENV_FILE) else {}
     pref = values.get("MERGE_PDFS", None)
+
+    other_files = [
+        f for f in os.listdir(folder)
+        if os.path.isfile(os.path.join(folder, f)) and not f.lower().endswith(".pdf")
+    ]
+
+    if other_files:
+        print("\n--- The following files are NOT PDFs ---")
+        for f in other_files:
+            print("  •", f)
+        print("--- These will NOT be included in merging ---")
 
     if pref == "-1":
         return
@@ -92,8 +103,8 @@ if __name__ == "__main__":
         "--folder",
         required=True,
         help="Folder containing PDF files"
-        )
+    )
     parser.add_argument("--output", help="Output PDF name (optional)")
     args = parser.parse_args()
 
-    merge(args.folder, args.output)
+    ask_and_merge_pdfs(args.folder, args.output)
